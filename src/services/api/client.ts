@@ -315,7 +315,7 @@ export async function getAnthropicClient({
     ...(isDebugToStdErr() && { logger: createStderrLogger() }),
   }
 
-  if (customApiProvider === 'openai') {
+  if (customApiProvider === 'openai' || customApiProvider === 'openai-standard') {
     ;(clientConfig as ConstructorParameters<typeof Anthropic>[0] & {
       __openaiCompat?: boolean
     }).__openaiCompat = true
@@ -324,8 +324,10 @@ export async function getAnthropicClient({
   return new Anthropic(clientConfig)
 }
 
-function getGlobalCompatProvider(): 'anthropic' | 'openai' {
-  return process.env.CLAUDE_CODE_COMPATIBLE_API_PROVIDER === 'openai'
+function getGlobalCompatProvider(): 'anthropic' | 'openai' | 'openai-standard' {
+  return process.env.CLAUDE_CODE_COMPATIBLE_API_PROVIDER === 'openai-standard'
+    ? 'openai-standard'
+    : process.env.CLAUDE_CODE_COMPATIBLE_API_PROVIDER === 'openai'
     ? 'openai'
     : 'anthropic'
 }

@@ -26,7 +26,7 @@ type Props = {
   mode?: 'login' | 'setup-token';
   forceLoginMethod?: 'claudeai' | 'console';
 };
-type CompatibleApiProvider = 'anthropic' | 'openai';
+type CompatibleApiProvider = 'anthropic' | 'openai' | 'openai-standard';
 type OAuthStatus = {
   state: 'idle';
 } // Initial state, waiting to select login method
@@ -187,19 +187,29 @@ export function ConsoleOAuthFlow({
     }
   }, [pastedCode, safeOauthStatus, showPastePrompt, urlCopied]);
   const persistCustomEndpoint = useCallback(() => {
-    const nextBaseURL = customBaseURL.trim();
+    let nextBaseURL = customBaseURL.trim();
     const nextApiKey = customApiKey.trim();
     const nextModel = customModel.trim();
+
+    // Store the original URL without /v1 suffix
+    let storedBaseURL = nextBaseURL;
+
+    // For openai-standard, append /v1 only when setting env variable, not when storing
+    let envBaseURL = nextBaseURL;
+    if (compatibleApiProvider === 'openai-standard' && !envBaseURL.endsWith('/v1')) {
+      envBaseURL = envBaseURL.replace(/\/+$/, '') + '/v1';
+    }
+
     const normalizedKey = nextApiKey ? normalizeApiKeyForConfig(nextApiKey) : null;
     const nextSavedModels = nextModel ? [...new Set([...(persistedCustomApiEndpoint.savedModels ?? []), nextModel])] : persistedCustomApiEndpoint.savedModels ?? [];
-    process.env.ANTHROPIC_BASE_URL = nextBaseURL;
+    process.env.ANTHROPIC_BASE_URL = envBaseURL;
     process.env.DOGE_API_KEY = nextApiKey;
     process.env.ANTHROPIC_MODEL = nextModel;
     saveGlobalConfig(current => ({
       ...current,
       customApiEndpoint: {
         provider: compatibleApiProvider,
-        baseURL: nextBaseURL,
+        baseURL: storedBaseURL,
         apiKey: undefined,
         model: nextModel,
         savedModels: nextSavedModels
@@ -211,7 +221,7 @@ export function ConsoleOAuthFlow({
     }));
     writeCustomApiStorage({
       provider: compatibleApiProvider,
-      baseURL: nextBaseURL,
+      baseURL: storedBaseURL,
       apiKey: nextApiKey,
       model: nextModel,
       savedModels: nextSavedModels
@@ -281,12 +291,26 @@ export function ConsoleOAuthFlow({
       return;
     }
     setCustomModel(nextValue);
-    persistCustomEndpoint();
+    try {
+      persistCustomEndpoint();
+    } catch (err) {
+      logError(new Error('Failed to persist custom endpoint: ' + (err instanceof Error ? err.message : 'Unknown error')));
+      setOAuthStatus({
+        state: 'error',
+        message: 'Failed to save configuration: ' + (err instanceof Error ? err.message : 'Unknown error'),
+        toRetry: {
+          state: 'custom_config',
+          provider: safeOauthStatus.provider,
+          step: 'model'
+        }
+      });
+      return;
+    }
     setOAuthStatus({
       state: 'success'
     });
     void sendNotification({
-      message: safeOauthStatus.provider === 'openai' ? 'OpenAI-compatible endpoint saved' : 'Anthropic-compatible endpoint saved',
+      message: safeOauthStatus.provider === 'openai' || safeOauthStatus.provider === 'openai-standard' ? 'OpenAI-compatible endpoint saved' : 'Anthropic-compatible endpoint saved',
       notificationType: 'auth_success'
     }, terminal);
   }, [safeOauthStatus, persistCustomEndpoint, terminal]);
@@ -530,17 +554,20 @@ function OAuthStatusMessage(t0) {
         }, {
           label: <Text>OpenAI-like API · <Text dimColor={true}>Convert Anthropic Messages to Chat Completions</Text></Text>,
           value: "openai"
+        }, {
+          label: <Text>OpenAI Standard API · <Text dimColor={true}>For NVIDIA, Ollama, Qwen, DeepSeek, etc. (Standard OpenAI format)</Text></Text>,
+          value: "openai-standard"
         }]} onChange={value_0 => startCompatibleApiConfig(value_0 as CompatibleApiProvider)} /></Box></Box>;
       }
     case "custom_config":
       {
-        const isOpenAIProvider = oauthStatus.provider === 'openai';
+        const isOpenAIProvider = oauthStatus.provider === 'openai' || oauthStatus.provider === 'openai-standard';
         const label = oauthStatus.step === 'baseURL' ? isOpenAIProvider ? 'Enter the OpenAI Chat Completions compatible base URL:' : 'Enter the Anthropic Messages compatible base URL:' : oauthStatus.step === 'apiKey' ? isOpenAIProvider ? 'Input OpenAI API Key:' : 'Input Anthropic API Key:' : 'Enter the default model name:';
         const value = oauthStatus.step === 'baseURL' ? customBaseURL : oauthStatus.step === 'apiKey' ? customApiKey : customModel;
         const onChange = oauthStatus.step === 'baseURL' ? setCustomBaseURL : oauthStatus.step === 'apiKey' ? setCustomApiKey : setCustomModel;
-        const placeholder = oauthStatus.step === 'baseURL' ? isOpenAIProvider ? 'http(s)://your-openai-compatible-endpoint.example.com' : 'http(s)://your-anthropic-compatible-endpoint.example.com' : oauthStatus.step === 'apiKey' ? 'sk-...' : isOpenAIProvider ? 'gpt-4o-mini' : 'claude-3-5-sonnet-latest';
+        const placeholder = oauthStatus.step === 'baseURL' ? isOpenAIProvider ? oauthStatus.provider === 'openai-standard' ? 'https://integrate.api.nvidia.com' : 'http(s)://your-openai-compatible-endpoint.example.com' : 'http(s)://your-anthropic-compatible-endpoint.example.com' : oauthStatus.step === 'apiKey' ? 'sk-...' : isOpenAIProvider ? oauthStatus.provider === 'openai-standard' ? 'openai/gpt-oss-120b' : 'gpt-4o-mini' : 'claude-3-5-sonnet-latest';
         const mask = oauthStatus.step === 'apiKey' ? '*' : undefined;
-        return <Box flexDirection="column" gap={1} marginTop={1}><Text bold={true}>Configure compatible interfaces</Text><Text>{compatibleApiProvider === 'openai' ? 'Current selection: OpenAI Chat Completions compatible format' : 'Current selection: Anthropic Messages compatible format'}</Text><Text>{label}</Text><Box flexDirection="row"><TextInput value={value} onChange={onChange} onSubmit={handleSubmitCustomConfig} onIsPastingChange={setIsCustomInputPasting} cursorOffset={cursorOffset} onChangeCursorOffset={setCursorOffset} columns={oauthStatus.step === 'baseURL' ? Math.max(20, textInputColumns - 12) : textInputColumns} focus={true} showCursor={true} placeholder={placeholder} mask={mask} dimColor={oauthStatus.step === 'model' && value.length === 0} />{oauthStatus.step === 'baseURL' ? <Text dimColor={true}>{isOpenAIProvider ? '/v1/chat/completions' : '/v1/messages'}</Text> : null}</Box><Text dimColor={true}>{isCustomInputPasting ? 'Press Enter to save the current item and continue.' : 'Press Enter to save the current item and continue.'}</Text></Box>;
+        return <Box flexDirection="column" gap={1} marginTop={1}><Text bold={true}>Configure compatible interfaces</Text><Text>{compatibleApiProvider === 'openai' || compatibleApiProvider === 'openai-standard' ? 'Current selection: OpenAI Chat Completions compatible format' : 'Current selection: Anthropic Messages compatible format'}</Text><Text>{label}</Text><Box flexDirection="row"><TextInput value={value} onChange={onChange} onSubmit={handleSubmitCustomConfig} onIsPastingChange={setIsCustomInputPasting} cursorOffset={cursorOffset} onChangeCursorOffset={setCursorOffset} columns={oauthStatus.step === 'baseURL' ? Math.max(20, textInputColumns - 12) : textInputColumns} focus={true} showCursor={true} placeholder={placeholder} mask={mask} dimColor={oauthStatus.step === 'model' && value.length === 0} />{oauthStatus.step === 'baseURL' ? <Text dimColor={true}>{oauthStatus.provider === 'openai-standard' ? '/v1' : isOpenAIProvider ? '/v1/chat/completions' : '/v1/messages'}</Text> : null}</Box><Text dimColor={true}>{isCustomInputPasting ? 'Press Enter to save the current item and continue.' : 'Press Enter to save the current item and continue.'}</Text></Box>;
       }
     case "idle":
       {

@@ -15,6 +15,7 @@ type OpenAICompatConfig = {
   baseURL: string
   headers?: Record<string, string>
   fetch?: typeof globalThis.fetch
+  isStandardOpenAI?: boolean
 }
 
 type OpenAIToolCall = {
@@ -222,8 +223,10 @@ export async function createOpenAICompatStream(
   request: OpenAIChatRequest,
   signal?: AbortSignal,
 ): Promise<ReadableStreamDefaultReader<Uint8Array>> {
+  // For standard OpenAI format (like NVIDIA), the baseURL already includes /v1
+  const path = config.isStandardOpenAI ? '/chat/completions' : '/v1/chat/completions'
   const response = await (config.fetch ?? globalThis.fetch)(
-    joinBaseUrl(config.baseURL, '/v1/chat/completions'),
+    joinBaseUrl(config.baseURL, path),
     {
       method: 'POST',
       signal,

@@ -1812,7 +1812,7 @@ async function* queryModel(
         // since we handle tool input accumulation ourselves
         // biome-ignore lint/plugin: main conversation loop handles attribution separately
         const compatProvider = readCustomApiStorage().provider ?? 'anthropic'
-        if (compatProvider === 'openai') {
+        if (compatProvider === 'openai' || compatProvider === 'openai-standard') {
           const openAIRequest = convertAnthropicRequestToOpenAI({
             model: params.model,
             system: params.system,
@@ -1835,6 +1835,7 @@ async function* queryModel(
                 ? { [CLIENT_REQUEST_ID_HEADER]: clientRequestId }
                 : undefined,
               fetch: globalThis.fetch,
+              isStandardOpenAI: compatProvider === 'openai-standard',
             },
             openAIRequest,
             signal,

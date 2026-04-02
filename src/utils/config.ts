@@ -182,7 +182,7 @@ export type OutputStyle = string
 
 export type GlobalConfig = {
   customApiEndpoint?: {
-    provider?: 'anthropic' | 'openai'
+    provider?: 'anthropic' | 'openai' | 'openai-standard'
     baseURL?: string
     apiKey?: string
     model?: string

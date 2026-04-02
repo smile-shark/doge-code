@@ -208,7 +208,12 @@ function applyPersistedCustomApiEndpointEnv(): void {
   }
 
   if (customApiEndpoint?.baseURL) {
-    process.env.ANTHROPIC_BASE_URL = customApiEndpoint.baseURL
+    let baseURL = customApiEndpoint.baseURL
+    // For openai-standard, append /v1 if not already present
+    if (customApiEndpoint.provider === 'openai-standard' && !baseURL.endsWith('/v1')) {
+      baseURL = baseURL.replace(/\/+$/, '') + '/v1'
+    }
+    process.env.ANTHROPIC_BASE_URL = baseURL
   }
 
   if (customApiEndpoint?.apiKey) {
